@@ -30,7 +30,6 @@ with st.sidebar:
 st.title("⚽ Haiti Soccer – Gesner Deslandes & Family")
 st.markdown("**Control Haiti's team** – use arrow keys (desktop) or swipe/tap (mobile) to move, shoot, and score from the golden zones!")
 
-# The full HTML of the soccer game (copied from your original code)
 game_html = """
 <!DOCTYPE html>
 <html lang="en">
@@ -296,8 +295,8 @@ game_html = """
     <button id="pauseBtn" class="pause-btn">⏸️ PAUSE</button>
     <button id="audioBtn">🔊 ENABLE SOUND</button>
   </div>
-  <div id="gameMessage" class="message-area">⚡ Choose opponent, press START. Desktop: ARROWS move, ENTER shoot, P to pause | Mobile: SWIPE move, TAP shoot, double-tap pass ⚡</div>
-  <div class="footer">🎮 Shoot only from the 3 GOLDEN ZONES. GK catches & clears the area, then throws to teammate.</div>
+  <div id="gameMessage" class="message-area">⚡ Choose opponent, press START. Desktop: ARROWS move, ENTER shoot, X pass | Mobile: SWIPE move, TAP shoot, double-tap pass ⚡</div>
+  <div class="footer">🎮 Shoot only from the 3 GOLDEN ZONES. GK can save! Pass to teammates for better chances.</div>
 </div>
 
 <script>
@@ -344,6 +343,7 @@ game_html = """
   function playKick() { playTone(120, 0.1, 0.35, "sawtooth"); playTone(320, 0.08, 0.25, "square", 0.02); }
   function playWhistleShort() { playTone(1500, 0.2, 0.5, "square"); }
   function playCatch() { playTone(300, 0.1, 0.4, "sine"); }
+  function playSave() { playTone(600, 0.2, 0.5, "sawtooth"); }
 
   function playWelcomeFanfare() {
     try {
@@ -390,7 +390,7 @@ game_html = """
     } catch(e) {}
   }
 
-  // Crowd generation
+  // Crowd generation (unchanged, but improved performance)
   function buildCrowdBuffer(ctx, seconds, lowFreq, highFreq, modFreq) {
     const rate = ctx.sampleRate;
     const len = rate * seconds;
@@ -778,6 +778,7 @@ game_html = """
     if (ball.y - ball.radius < FIELD.top) { ball.y = FIELD.top + ball.radius; ball.vy *= -0.5; if (ball.owner) ball.owner.hasBall = false; ball.owner = null; }
     if (ball.y + ball.radius > FIELD.bottom) { ball.y = FIELD.bottom - ball.radius; ball.vy *= -0.5; if (ball.owner) ball.owner.hasBall = false; ball.owner = null; }
 
+    // Goal detection
     if (ball.x + ball.radius >= GOAL_LEFT.x && ball.x - ball.radius <= GOAL_LEFT.x + GOAL_LEFT.width &&
         ball.y + ball.radius >= GOAL_LEFT.y && ball.y - ball.radius <= GOAL_LEFT.y + GOAL_LEFT.height) {
       goalScored('opponent');
@@ -855,6 +856,27 @@ game_html = """
         ball.vx = 0; ball.vy = 0;
         playCatch();
         evacuatePlayersAroundGK();
+      }
+      player.hasBall = false;
+      return false;
+    }
+
+    // Shot from scoring zone: goalkeeper has a chance to save (40%)
+    const saveChance = 0.4;
+    if (Math.random() < saveChance) {
+      // Goalkeeper saves
+      const oppGK = opponentPlayers.find(p => p.role === 'gk');
+      if (oppGK) {
+        if (ball.owner) ball.owner.hasBall = false;
+        ball.owner = oppGK;
+        oppGK.hasBall = true;
+        ball.vx = 0; ball.vy = 0;
+        playSave();
+        evacuatePlayersAroundGK();
+        document.getElementById("gameMessage").innerHTML = "🧤 GOALKEEPER SAVES!";
+        setTimeout(() => {
+          if (gameRunning) document.getElementById("gameMessage").innerHTML = "⚽ Play on!";
+        }, 1000);
       }
       player.hasBall = false;
       return false;
@@ -957,12 +979,26 @@ game_html = """
     ctxDraw.arc(ball.x, ball.y, ball.radius, 0, 2*Math.PI);
     ctxDraw.fillStyle = "#f5bc70";
     ctxDraw.fill();
-    ctxDraw.strokeStyle = "#442200";
-    ctxDraw.lineWidth = 1.5;
+    // Soccer pattern: black pentagons style
     ctxDraw.beginPath();
-    ctxDraw.moveTo(ball.x-4, ball.y); ctxDraw.lineTo(ball.x+4, ball.y);
-    ctxDraw.moveTo(ball.x, ball.y-4); ctxDraw.lineTo(ball.x, ball.y+4);
-    ctxDraw.stroke();
+    ctxDraw.moveTo(ball.x-3, ball.y-2);
+    ctxDraw.lineTo(ball.x, ball.y-5);
+    ctxDraw.lineTo(ball.x+3, ball.y-2);
+    ctxDraw.lineTo(ball.x+2, ball.y+2);
+    ctxDraw.lineTo(ball.x-2, ball.y+2);
+    ctxDraw.closePath();
+    ctxDraw.fillStyle = "#000";
+    ctxDraw.fill();
+    ctxDraw.beginPath();
+    ctxDraw.moveTo(ball.x-4, ball.y+0);
+    ctxDraw.lineTo(ball.x-1, ball.y+3);
+    ctxDraw.lineTo(ball.x+1, ball.y+3);
+    ctxDraw.lineTo(ball.x+4, ball.y+0);
+    ctxDraw.lineTo(ball.x+1, ball.y-3);
+    ctxDraw.lineTo(ball.x-1, ball.y-3);
+    ctxDraw.closePath();
+    ctxDraw.fillStyle = "#000";
+    ctxDraw.fill();
   }
 
   function render() {
@@ -1050,8 +1086,8 @@ game_html = """
 
   // Controls
   window.addEventListener('keydown', (e) => {
+    const user = haitiPlayers.find(p => p.control);
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      const user = haitiPlayers.find(p => p.control);
       if (user && gameRunning && !paused) {
         let dx = 0, dy = 0;
         if (e.key === 'ArrowLeft') dx = -user.speed;
@@ -1065,8 +1101,17 @@ game_html = """
     }
     if (e.key === 'Enter' && gameRunning && !paused) {
       e.preventDefault();
-      const user = haitiPlayers.find(p => p.control);
       if (user && user.hasBall) shoot(user);
+    }
+    if ((e.key === 'x' || e.key === 'X') && gameRunning && !paused) {
+      e.preventDefault();
+      if (user && user.hasBall) {
+        const teammates = haitiPlayers.filter(t => t !== user && t.role !== 'gk');
+        if (teammates.length) {
+          const target = teammates.reduce((a,b) => Math.hypot(a.x-user.x, a.y-user.y) < Math.hypot(b.x-user.x, b.y-user.y) ? a : b);
+          pass(user, target);
+        }
+      }
     }
     if ((e.key === 'p' || e.key === 'P') && gameRunning) {
       e.preventDefault();
@@ -1074,6 +1119,7 @@ game_html = """
     }
   });
 
+  // Touch controls
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const touch = e.touches[0];
@@ -1159,6 +1205,7 @@ game_html = """
     namesDiv.className = 'names';
     namesDiv.innerHTML = `
       <p class="owner">🇭🇹 Gesner Deslandes 🇭🇹</p>
+      <p>GlobalInternet.py – Director & Python Programmer</p>
       <p>Collaborators:</p>
       <p>Gesner Junior Deslandes | Roosevelt Deslandes</p>
       <p>Sebastien Stephane Deslandes | Zendaya Christelle Deslandes</p>
